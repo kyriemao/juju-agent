@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Personal Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #111827; color: #e5e7eb; height: 100vh; display: flex; flex-direction: column; }
+    #topbar { padding: 10px; border-bottom: 1px solid #374151; display: flex; align-items: center; gap: 8px; }
+    #sessions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tab { background: #1f2937; border: 1px solid #374151; color: #e5e7eb; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+    .tab.active { border-color: #60a5fa; }
+    #status { margin-left: auto; font-size: 12px; }
+    #messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 75%; padding: 10px; border-radius: 10px; line-height: 1.4; }
+    .user { align-self: flex-end; background: #2563eb; }
+    .assistant { align-self: flex-start; background: #374151; }
+    .tool { align-self: flex-start; border: 1px solid #10b981; background: #052e2b; font-size: 13px; }
+    .error { align-self: center; background: #7f1d1d; }
+    #composer { border-top: 1px solid #374151; padding: 10px; display: flex; gap: 8px; }
+    #input { flex: 1; min-height: 70px; background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 8px; padding: 8px; }
+    button { background: #2563eb; color: white; border: none; border-radius: 8px; padding: 0 14px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div id="sessions"></div>
+    <button id="newSessionBtn">新建 Session</button>
+    <div id="status">连接中...</div>
+  </div>
+  <div id="messages"></div>
+  <div id="composer">
+    <textarea id="input" placeholder="输入消息，Ctrl+Enter 发送"></textarea>
+    <button id="sendBtn">发送</button>
+  </div>
+
+  <script>
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const statusEl = document.getElementById('status');
+    const messagesEl = document.getElementById('messages');
+    const sessionsEl = document.getElementById('sessions');
+    const inputEl = document.getElementById('input');
+    let sessions = {};
+    let activeSessionId = null;
+    let activeAssistantNode = null;
+
+    function addSessionTab(sessionId) {
+      if (sessions[sessionId]) return;
+      sessions[sessionId] = { messages: [] };
+      const tab = document.createElement('button');
+      tab.className = 'tab';
+      tab.innerText = sessionId.slice(0, 8);
+      tab.onclick = () => switchSession(sessionId);
+      tab.dataset.sid = sessionId;
+      sessionsEl.appendChild(tab);
+      switchSession(sessionId);
+    }
+
+    function switchSession(sessionId) {
+      activeSessionId = sessionId;
+      [...sessionsEl.children].forEach(x => x.classList.toggle('active', x.dataset.sid === sessionId));
+      renderMessages();
+    }
+
+    function renderMessages() {
+      messagesEl.innerHTML = '';
+      activeAssistantNode = null;
+      const msgs = sessions[activeSessionId]?.messages || [];
+      msgs.forEach(m => appendMessageElement(m, false));
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function appendMessageElement(message, store = true) {
+      if (!activeSessionId) return;
+      if (store) sessions[activeSessionId].messages.push(message);
+      const div = document.createElement('div');
+      div.className = `msg ${message.type}`;
+      if (message.type === 'assistant') {
+        div.innerHTML = marked.parse(message.content || '');
+        activeAssistantNode = div;
+      } else {
+        div.innerText = message.content;
+      }
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function sendMessage() {
+      const content = inputEl.value.trim();
+      if (!content) return;
+      appendMessageElement({ type: 'user', content });
+      ws.send(JSON.stringify({ type: 'message', session_id: activeSessionId, content }));
+      inputEl.value = '';
+      activeAssistantNode = null;
+    }
+
+    ws.onopen = () => statusEl.innerText = '🟢 在线';
+    ws.onclose = () => statusEl.innerText = '🔴 断开';
+    ws.onerror = () => statusEl.innerText = '⚠️ 错误';
+
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'session_created') {
+        addSessionTab(msg.session_id);
+        return;
+      }
+      if (msg.session_id && msg.session_id !== activeSessionId) return;
+
+      if (msg.type === 'chunk') {
+        if (!activeAssistantNode) {
+          appendMessageElement({ type: 'assistant', content: msg.content });
+        } else {
+          const last = sessions[activeSessionId].messages[sessions[activeSessionId].messages.length - 1];
+          last.content += msg.content;
+          activeAssistantNode.innerHTML = marked.parse(last.content);
+        }
+      } else if (msg.type === 'tool') {
+        appendMessageElement({ type: 'tool', content: msg.content });
+      } else if (msg.type === 'error') {
+        appendMessageElement({ type: 'error', content: msg.content });
+      }
+    };
+
+    document.getElementById('sendBtn').onclick = sendMessage;
+    document.getElementById('newSessionBtn').onclick = () => ws.send(JSON.stringify({ type: 'new_session' }));
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>

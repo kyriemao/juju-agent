@@ -1,0 +1,47 @@
+# Personal Agent — CC Wrapper
+
+一个基于 FastAPI + WebSocket 的 Web IM Bot，用来在浏览器里控制 Claude Code CLI。
+
+## 功能
+- 多 Session 并发聊天
+- 每个 Session 独立 git worktree
+- Claude stream-json 实时流式输出
+- 工具调用过滤展示
+
+## 启动
+```bash
+cd personal-agent
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+打开 http://localhost:8000
+
+## WebSocket 协议
+客户端：
+- `{"type":"new_session"}`
+- `{"type":"message","session_id":"...","content":"..."}`
+
+服务端：
+- `session_created`
+- `chunk`
+- `tool`
+- `done`
+- `error`
+
+## 测试
+```bash
+cd personal-agent
+python -m pytest -q
+```
+
+## 自检（建议先跑）
+```bash
+cd personal-agent
+python scripts/self_check.py
+```
+
+> 说明：`Computer Use` 依赖你本机可用的 Claude Code 能力与浏览器运行环境。
+> 在当前 CI/沙箱里，如果 `claude`、`fastapi` 或浏览器依赖缺失，将无法完成完整 E2E。
