@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -40,12 +41,16 @@ class CCProcess:
             message,
         ]
         logger.info("Starting Claude process for session %s", session_id)
+        # Remove CLAUDECODE env var to allow launching Claude Code from within
+        # an existing Claude Code session (e.g. during testing).
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         self.process = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=str(cwd),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         assert self.process.stdout is not None
